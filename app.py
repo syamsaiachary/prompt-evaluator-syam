@@ -5,6 +5,7 @@ import os
 import shutil
 import time
 import re
+import copy
 import pandas as pd
 
 import config
@@ -86,18 +87,46 @@ header[data-testid="stHeader"] { display: none !important; }
 .indium-content { padding: 40px 48px; }
 
 /* ── Cards ── */
-.upload-card {
-    background: #111111; border: 1px solid #1E1E1E;
-    border-radius: 12px; padding: 32px; margin-bottom: 24px;
-    transition: border-color 0.2s;
-}
-.upload-card:hover { border-color: #2A2A2A; }
 .upload-card-title {
     font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
     letter-spacing: 0.12em; text-transform: uppercase;
     margin-left: 24px;
     color: #F4610A; margin-bottom: 16px;
 }
+
+/* ── API key input ── */
+[data-testid="stTextInput"] input {
+    background: #0D0D0D !important;
+    border: 1.5px solid #2A2A2A !important;
+    border-radius: 8px !important;
+    color: #CCC !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 13px !important;
+    padding: 12px 16px !important;
+    transition: border-color 0.2s !important;
+}
+[data-testid="stTextInput"] input:focus {
+    border-color: rgba(244,97,10,0.6) !important;
+    box-shadow: 0 0 0 2px rgba(244,97,10,0.1) !important;
+}
+[data-testid="stTextInput"] input::placeholder { color: #444 !important; }
+[data-testid="stTextInput"] label {
+    font-family: 'Syne', sans-serif !important;
+    font-size: 11px !important; font-weight: 700 !important;
+    letter-spacing: 0.12em !important; text-transform: uppercase !important;
+    color: #F4610A !important;
+}
+
+/* ── Key status badges ── */
+.key-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 5px 12px; border-radius: 20px; margin-top: 8px;
+}
+.key-custom  { color: #F4610A; background: rgba(244,97,10,0.1);  border: 1px solid rgba(244,97,10,0.3); }
+.key-default { color: #28C840; background: rgba(40,200,64,0.1);  border: 1px solid rgba(40,200,64,0.2); }
+.key-missing { color: #FF5F57; background: rgba(255,95,87,0.1);  border: 1px solid rgba(255,95,87,0.25); }
 
 /* ── File uploader ── */
 [data-testid="stFileUploader"] {
@@ -124,6 +153,11 @@ header[data-testid="stHeader"] { display: none !important; }
     background: linear-gradient(135deg, #FF7020, #F4610A) !important;
     box-shadow: 0 6px 28px rgba(244,97,10,0.4) !important;
     transform: translateY(-1px) !important;
+}
+.stButton > button:disabled {
+    background: #1A1A1A !important;
+    color: #444 !important; box-shadow: none !important;
+    cursor: not-allowed !important; transform: none !important;
 }
 .stButton > button[kind="secondary"] {
     background: transparent !important; border: 1px solid #2A2A2A !important;
@@ -197,8 +231,7 @@ hr { border: none !important; border-top: 1px solid #1A1A1A !important; margin: 
 .section-header {
     font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
     letter-spacing: 0.18em; text-transform: uppercase;
-    color: #F4610A; margin-bottom: 20px;
-    margin-left: 24px;
+    color: #F4610A; margin-bottom: 20px; margin-left: 24px;
     display: flex; align-items: center; gap: 10px;
 }
 .section-header::after {
@@ -256,13 +289,12 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 def count_cached_rows(total_rows: int) -> set:
     """
     Return the set of row indices that already have a cache file.
-    Cache files are named row_NNNN.json (zero-padded 4 digits).
-    This is used to pre-seed the progress bar on retry runs so the
-    bar starts from the correct position rather than from zero.
+    Used to pre-seed the progress bar on retry runs.
     """
     cache_dir = getattr(config, "CACHE_DIR", ".eval_cache")
     cached = set()
@@ -282,6 +314,41 @@ if "eval_done" not in st.session_state:
     st.session_state.eval_time = ""
     st.session_state.eval_logs = ""
 
+# ── API Key ───────────────────────────────────────────────────────────────────
+st.markdown('<div class="upload-card-title">🔑 API Key</div>', unsafe_allow_html=True)
+
+user_api_key = st.text_input(
+    "Google API Key",
+    type="password",
+    placeholder="Paste your Gemini API key here, or leave blank to use the configured default",
+    help="Your key is never stored. It is passed directly to the evaluation process and discarded after the run.",
+    label_visibility="collapsed",
+)
+
+# Resolve active key — user-supplied takes priority over the env default
+env_default_key  = os.environ.get("API_KEY", "").strip()
+user_api_key     = user_api_key.strip()
+active_api_key   = user_api_key if user_api_key else env_default_key
+
+# Show which key source is active
+if user_api_key:
+    st.markdown(
+        '<span class="key-badge key-custom">⚡ Using your API key</span>',
+        unsafe_allow_html=True,
+    )
+elif env_default_key:
+    st.markdown(
+        '<span class="key-badge key-default">✓ Using configured default key</span>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<span class="key-badge key-missing">✗ No API key available — paste one above</span>',
+        unsafe_allow_html=True,
+    )
+
+st.markdown("<br>", unsafe_allow_html=True)
+
 # ── Upload + Cache ────────────────────────────────────────────────────────────
 col_upload, col_cache = st.columns([3, 1], gap="large")
 
@@ -292,7 +359,6 @@ with col_upload:
         type=["xlsx"],
         label_visibility="collapsed",
     )
-    st.markdown('</div>', unsafe_allow_html=True)
 
 with col_cache:
     st.markdown('<div class="upload-card-title">🗄 Cache</div>', unsafe_allow_html=True)
@@ -308,7 +374,6 @@ with col_cache:
             st.success("Cache cleared.")
         else:
             st.info("Cache is already empty.")
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Empty state ───────────────────────────────────────────────────────────────
 if not uploaded_file:
@@ -354,7 +419,19 @@ st.markdown(f"""
 # ── Run button ────────────────────────────────────────────────────────────────
 _, btn_col, _ = st.columns([2, 1, 2])
 with btn_col:
-    start = st.button("🚀 Run Evaluation", type="primary", use_container_width=True)
+    no_key = not active_api_key
+    start  = st.button(
+        "🚀 Run Evaluation",
+        type="primary",
+        use_container_width=True,
+        disabled=no_key,
+    )
+    if no_key:
+        st.markdown(
+            '<div style="text-align:center; font-size:11px; color:#555; margin-top:8px;">'
+            'Paste an API key above to enable</div>',
+            unsafe_allow_html=True,
+        )
 
 if start:
     st.session_state.eval_done = False
@@ -371,14 +448,10 @@ if start:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Pre-count cached rows so the progress bar starts correctly ──
-    # On a retry run, many rows are already cached. Without this, the
-    # bar would start at 0 and only count rows processed this session,
-    # making it look like we're starting from scratch every time.
+    # ── Pre-count cached rows so the progress bar starts at the right position
     completed_rows = count_cached_rows(total_rows)
     cached_count   = len(completed_rows)
-
-    initial_pct = min(cached_count / max(total_rows, 1), 1.0)
+    initial_pct    = min(cached_count / max(total_rows, 1), 1.0)
 
     if cached_count > 0:
         progress_bar = st.progress(
@@ -394,7 +467,13 @@ if start:
     start_time = time.perf_counter()
     logs: list[str] = []
 
-    # ── Subprocess ───────────────────────────────────────────────────────────
+    # ── Build subprocess environment — inject active API key ─────────────────
+    # Inherits the full current environment then overrides EVALUATOR_API_KEY.
+    # config.py reads EVALUATOR_API_KEY first, falling back to API_KEY,
+    # so this transparently overrides whichever key was configured by default.
+    subprocess_env = copy.copy(os.environ)
+    subprocess_env["EVALUATOR_API_KEY"] = active_api_key
+
     process = subprocess.Popen(
         [sys.executable, "-u", "-X", "utf8", "main.py", "--csv", temp_input_path],
         stdout=subprocess.PIPE,
@@ -402,6 +481,7 @@ if start:
         text=True,
         encoding="utf-8",
         bufsize=1,
+        env=subprocess_env,
         cwd=os.path.dirname(os.path.abspath(__file__)),
     )
 
@@ -414,9 +494,6 @@ if start:
 
         logs.append(msg)
 
-        # Track newly completed rows from live log output.
-        # Cache HITs and fresh evaluations both count — the set prevents
-        # double-counting if the same row index appears more than once.
         match = re.search(r"Row (\d+)", msg)
         if match and any(x in msg for x in ["Cache HIT", "total=", "FLAGGED", "Failed writing cache", "Cache read failed"]):
             completed_rows.add(int(match.group(1)))

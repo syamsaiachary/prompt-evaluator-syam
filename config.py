@@ -5,13 +5,20 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()  # This looks for a .env file in the current directory
-api_key = os.getenv("API_KEY")
+def get_api_key() -> str:
+    """
+    Returns the active API key.
+    Priority: environment variable set by app.py (user-supplied)
+              → fallback to .env file
+    """
+    return os.environ.get("EVALUATOR_API_KEY") or os.getenv("API_KEY", "")
+
 
 # Worker 1 — processes first half of CSV
 WORKER_1 = {
     "provider": "gemini",
     "model": "gemma-4-31b-it",
-    "api_key": api_key,   
+    "api_key": get_api_key(),   
     "semaphore_limit": 8,                
 }
 
@@ -19,7 +26,7 @@ WORKER_1 = {
 WORKER_2 = {
     "provider": "gemini",
     "model": "gemma-4-26b-a4b-it",
-    "api_key": api_key,  
+    "api_key": get_api_key(),  
     "semaphore_limit": 8,
 }
 
